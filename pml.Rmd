@@ -1,0 +1,152 @@
+---
+title: "pml"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE, fig.width=10, fig.height=5)
+options(width=120)
+```
+
+Practical Machine Learning 
+================================================  
+
+This script has been tested on RStudio version 1.2.5042.  
+
+Background  
+----------------------------  
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, our goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [ http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har ]( http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har ) (see the section on the Weight Lifting Exercise Dataset).   
+
+Data
+----------------------------  
+The training data for this project is available here:  
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)  
+The test data is available here:  
+[https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv)  
+The data for this project comes from this original source: [http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har](http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har). If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.  
+
+Results  
+----------------------------  
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.  
+
+* Peer Review Portion-
+Your submission should consist of a link to a Github repo with your R markdown and compiled HTML file describing your analysis. Please constrain the text of the writeup to < 2000 words and the number of figures to be less than 5. It will make it easier for the graders if you submit a repo with a gh-pages branch so the HTML page can be viewed online (and you always want to make it easy on graders :-).  
+
+* Course Project Prediction Quiz Portion-
+You should also apply your machine learning algorithm to the 20 test cases available in the test data above. Please submit your predictions in appropriate format to the programming assignment for automated grading. See the programming assignment for additional details.  
+
+Reproducibility  
+----------------------------  
+Load the following libraries anmmd set the seed.
+```{r warning=FALSE, error=FALSE, message=FALSE}
+library(rattle)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(corrplot)
+library(randomForest)
+library(RColorBrewer)
+set.seed(100)
+```  
+
+Data  
+----------------------------  
+Load the dataset and read the two csv files into two data frames. 
+```{r warning=FALSE, error=FALSE, message=FALSE}
+trainUrl <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+trainFile <- "pml-training.csv"
+testFile  <- "pml-testing.csv"
+if (!file.exists(trainFile)) {
+  download.file(trainUrl, destfile = trainFile, method = "curl")
+}
+if (!file.exists(testFile)) {
+  download.file(testUrl, destfile = testFile, method = "curl")
+}
+
+train <- read.csv(trainFile)
+test <- read.csv(testFile)
+dim(train)
+dim(test)
+```  
+We need to predict the `classe` variable in the training set. We will clean the dataset and remove the <b>Near Zero Variance</b> Variables.  We then remove columns of the dataset that don't contribute to accelerometer and remove NAs. 
+```{r warning=FALSE, error=FALSE, message=FALSE}
+nearZero <- nearZeroVar(train, saveMetrics = TRUE)
+training <- train[, !nearZero$nzv]
+testing <- test[, !nearZero$nzv]
+regexcheck <- grepl("^X|timestamp|user_name", names(training))
+training <- training[, !regexcheck]
+testing <- testing[, !regexcheck]
+nacheck <- (colSums(is.na(training)) == 0)
+training <- training[, nacheck]
+testing <- testing[, nacheck]
+dim(training)
+dim(testing)
+```  
+
+Let us create the correlation Matrix of Columns in the Training Data set.  
+```{r warning=FALSE, error=FALSE, message=FALSE}
+corrplot(cor(training[, -length(names(training))]), method = "color", tl.cex = 0.5)
+```  
+
+Data Partitioning  
+----------------------------  
+We split the cleaned training set into a training data set of 70% and a validation data set 30%. We will use the validation data set to conduct cross validation in future steps.  
+```{r warning=FALSE, error=FALSE, message=FALSE}
+set.seed(100)
+split <- createDataPartition(training$classe, p = 0.70, list = FALSE)
+validating <- training[-split, ]
+training <- training[split, ]
+dim(training)
+dim(validating)
+```  
+Thud, the dataset is divided into training, validating and testing datasets.
+
+Data Modelling  
+----------------------------  
+We now fit a predictive model for activity recognition using <b>Decision Tree</b> algorithm.  
+```{r warning=FALSE, error=FALSE, message=FALSE}
+modelT <- rpart(classe ~ ., data = training, method = "class")
+prp(model)
+```  
+
+Let us estimate the performance of the model on the <b>validation</b> data set.  
+```{r warning=FALSE, error=FALSE, message=FALSE}
+predictT <- predict(modelT, validating, type = "class")
+confusionMatrix(validating$classe, predictT)
+accuracy <- postResample(predictT, validating$classe)
+outOfSampleErr <- 1 - as.numeric(confusionMatrix(validating$classe, predictT)$overall[1])
+accuracy
+outOfSampleErr 
+```  
+
+The Estimated Accuracy of the Random Forest Model is 74.4% and the Estimated Out-of-Sample Error is 25.6%.  
+
+Let us use fit a predictive model for activity recognition using <b>Random Forest</b> algorithm, because it automatically selects important variables and is robust to correlated covariates & outliers in general. Let us use <b>5-fold cross validation</b> when applying the algorithm.  
+```{r warning=FALSE, error=FALSE, message=FALSE}
+modelRF <- train(classe ~ ., data = training, method = "rf", trControl = trainControl(method = "cv", 5), ntree = 250)
+modelRF
+```  
+
+Let us estimate the performance of the model on the <b>validation</b> data set.  
+```{r warning=FALSE, error=FALSE, message=FALSE}
+predictRF <- predict(modelRF, validating)
+confusionMatrix(validation$classe, predictRF)
+accuracy <- postResample(predictRF, validation$classe)
+outOfSampleErr  <- 1 - as.numeric(confusionMatrix(validation$classe, predictRF)$overall[1])
+accuracy
+outOfSampleErr 
+```  
+
+The Estimated Accuracy of the Random Forest Model is 99.8% and the Estimated Out-of-Sample Error is 0.2%.  
+Random Forests are giving better Results.
+
+Now, let usapply the <b>Random Forest</b> model to the original testing data set downloaded from the data source. We remove the problem_id column first.  
+```{r warning=FALSE, error=FALSE, message=FALSE}
+
+n = length(predict(modelRF, testing[, -length(names(testing))]))
+for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i], file = filename, quote = FALSE, row.names = FALSE, col.names = FALSE)
+}
+```  
